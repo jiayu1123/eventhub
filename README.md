@@ -202,3 +202,42 @@ Screenshots of the event listing, event details, seat selection, booking confirm
 Developed by [Jiayu Zou](https://github.com/jiayu1123).
 
 GitHub: https://github.com/jiayu1123/eventhub
+
+
+## Screenshots
+
+### Homepage
+Browse and search for available events.
+
+![EventHub Homepage](screenshots/homepage.png)
+
+### Event Details
+Explore event information and booking options.
+
+![Event Details](screenshots/event-details.png)
+
+### Interactive Seat Selection
+Select available seats using the interactive seating interface.
+
+![Seat Selection](screenshots/seat-selection.png)
+
+### Check Up
+Check up the tickets.
+
+![Seat Selection](screenshots/check-up.png)
+
+### Booking Confirmation
+Review reservation details after completing a booking.
+
+![Booking Confirmation](screenshots/booking-confirmation.png)
+
+### My Bookings
+View booking history and manage reservations.
+
+![My Bookings](screenshots/my-bookings.png)
+
+### User Profile
+Manage account information and security settings.
+
+![User Profile](screenshots/profile.png)
+
