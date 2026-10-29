@@ -16,6 +16,7 @@ import Register from "./pages/Register";
 import Profile from "./pages/Profile";
 
 import EventCard from "./components/EventCard";
+import AIEventAssistant from "./components/AIEventAssistant";
 import { fetchEvents } from "./api/events";
 import { useAuth } from "./context/AuthContext";
 
@@ -93,6 +94,10 @@ function Home() {
         <p className="mb-8 text-gray-600">
           Discover concerts, sports, and live events.
         </p>
+
+        <div className="mb-10">
+          <AIEventAssistant />
+        </div>
 
         <div className="mb-8 flex flex-col gap-4 sm:flex-row">
           <input

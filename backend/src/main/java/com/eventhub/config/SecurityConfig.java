@@ -18,61 +18,62 @@ import org.springframework.security.web.context.SecurityContextRepository;
 @Configuration
 public class SecurityConfig {
 
-    @Bean
-    public SecurityContextRepository securityContextRepository() {
-        return new HttpSessionSecurityContextRepository();
-    }
+        @Bean
+        public SecurityContextRepository securityContextRepository() {
+                return new HttpSessionSecurityContextRepository();
+        }
 
-    @Bean
-    public SecurityFilterChain securityFilterChain(
-            HttpSecurity http,
-            SecurityContextRepository securityContextRepository) throws Exception {
+        @Bean
+        public SecurityFilterChain securityFilterChain(
+                        HttpSecurity http,
+                        SecurityContextRepository securityContextRepository) throws Exception {
 
-        http
-                .securityContext(context -> context
-                        .securityContextRepository(
-                                securityContextRepository))
+                http
+                                .securityContext(context -> context
+                                                .securityContextRepository(
+                                                                securityContextRepository))
 
-                // Keep CSRF protection for session-based authentication
-                .csrf(csrf -> csrf
-                        .csrfTokenRepository(
-                                CookieCsrfTokenRepository.withHttpOnlyFalse())
-                        .csrfTokenRequestHandler(
-                                new CsrfTokenRequestAttributeHandler()))
+                                // Keep CSRF protection for session-based authentication
+                                .csrf(csrf -> csrf
+                                                .csrfTokenRepository(
+                                                                CookieCsrfTokenRepository.withHttpOnlyFalse())
+                                                .csrfTokenRequestHandler(
+                                                                new CsrfTokenRequestAttributeHandler()))
 
-                // Return 401 for unauthenticated API requests
-                .exceptionHandling(exceptions -> exceptions
-                        .authenticationEntryPoint(
-                                (request, response, authException) -> {
-                                    response.sendError(
-                                            HttpStatus.UNAUTHORIZED.value(),
-                                            "Authentication required");
-                                }))
+                                // Return 401 for unauthenticated API requests
+                                .exceptionHandling(exceptions -> exceptions
+                                                .authenticationEntryPoint(
+                                                                (request, response, authException) -> {
+                                                                        response.sendError(
+                                                                                        HttpStatus.UNAUTHORIZED.value(),
+                                                                                        "Authentication required");
+                                                                }))
 
-                // Public and protected endpoints
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(
-                                HttpMethod.GET,
-                                "/api/health",
-                                "/api/events",
-                                "/api/events/*",
-                                "/api/events/*/seats",
-                                "/api/auth/csrf")
-                        .permitAll()
+                                // Public and protected endpoints
+                                .authorizeHttpRequests(auth -> auth
+                                                .requestMatchers(
+                                                                HttpMethod.GET,
+                                                                "/api/health",
+                                                                "/api/events",
+                                                                "/api/events/search",
+                                                                "/api/events/*",
+                                                                "/api/events/*/seats",
+                                                                "/api/auth/csrf")
+                                                .permitAll()
 
-                        .requestMatchers(
-                                HttpMethod.POST,
-                                "/api/auth/register",
-                                "/api/auth/login")
-                        .permitAll()
+                                                .requestMatchers(
+                                                                HttpMethod.POST,
+                                                                "/api/auth/register",
+                                                                "/api/auth/login")
+                                                .permitAll()
 
-                        .anyRequest().authenticated());
+                                                .anyRequest().authenticated());
 
-        return http.build();
-    }
+                return http.build();
+        }
 
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
+        @Bean
+        public PasswordEncoder passwordEncoder() {
+                return new BCryptPasswordEncoder();
+        }
 }
