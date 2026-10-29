@@ -26,3 +26,14 @@ dist-ssr
 # Local database and backups
 /backups/
 /server/data/
+
+# Backend build output
+/backend/target/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Local backup files
+*.backup

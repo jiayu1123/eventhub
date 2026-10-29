@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 
@@ -69,10 +69,6 @@ export default function Profile() {
     passwordSuccess,
     setPasswordSuccess,
   ] = useState("");
-
-  useEffect(() => {
-    setName(user?.name ?? "");
-  }, [user?.name]);
 
   // Start editing profile
   function startEditing() {

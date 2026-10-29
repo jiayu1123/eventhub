@@ -1,0 +1,21 @@
+
+spring:
+  application:
+    name: eventhub-java
+
+  datasource:
+    url: jdbc:postgresql://localhost:5433/eventhub
+    username: ${DB_USERNAME:eventhub}
+    password: ${DB_PASSWORD:eventhub_dev_password}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080

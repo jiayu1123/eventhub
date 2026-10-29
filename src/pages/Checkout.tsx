@@ -1,14 +1,14 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import {
-  Link,
-  useLocation,
-  useNavigate,
-} from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
-import { events } from "../data/events";
 import type { BookingDraft } from "../types/booking";
+import type { Event } from "../types/event";
+import type { Seat } from "../types/seat";
+
+import { fetchEventById } from "../api/events";
+import { fetchEventSeats } from "../api/seats";
 import { createBooking } from "../api/bookings";
 import { useAuth } from "../context/AuthContext";
 
@@ -21,63 +21,106 @@ export default function Checkout() {
     location.state as { draft?: BookingDraft } | null
   )?.draft;
 
+  const eventId = draft?.eventId;
+  const selectedSeatCount = draft?.seats.length ?? 0;
+
+  const [event, setEvent] = useState<Event | null>(null);
+  const [seats, setSeats] = useState<Seat[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(
     null
   );
-  const [seatsUnavailable, setSeatsUnavailable] =
-    useState(false);
+  const [seatsUnavailable, setSeatsUnavailable] = useState(false);
 
-  const event = events.find(
-    (item) => item.id === draft?.eventId
-  );
+  // Load event and seat data from Spring Boot.
+  useEffect(() => {
+    let cancelled = false;
 
-  // Validate selected seats.
-  const validSeats =
-    draft?.seats.filter((seat) => {
-      const row = seat.id.charAt(0);
-      const number = Number(seat.id.slice(1));
+    async function loadCheckout() {
+      setLoading(true);
+      setLoadError(null);
+      setEvent(null);
+      setSeats([]);
+      setSeatsUnavailable(false);
+      setSubmitError(null);
 
-      return (
-        ["A", "B", "C", "D"].includes(row) &&
-        Number.isInteger(number) &&
-        number >= 1 &&
-        number <= 8 &&
-        (number - 1 + row.charCodeAt(0)) % 7 !== 0
-      );
-    }) ?? [];
+      if (!eventId || selectedSeatCount === 0) {
+        setLoading(false);
+        return;
+      }
 
-  // Recalculate prices from event data.
-  const pricedSeats = event
-    ? validSeats.map((seat) => ({
-        id: seat.id,
-        price:
-          event.price +
-          (seat.id.startsWith("A")
-            ? 40
-            : seat.id.startsWith("B")
-              ? 20
-              : 0),
-      }))
-    : [];
+      try {
+        const [eventData, seatData] = await Promise.all([
+          fetchEventById(eventId),
+          fetchEventSeats(eventId),
+        ]);
+
+        if (!cancelled) {
+          setEvent(eventData);
+          setSeats(seatData);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Failed to load checkout information."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadCheckout();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, selectedSeatCount]);
+
+  // Match selected seats with the real database inventory.
+  const selectedSeats =
+    draft?.seats.map((selected) =>
+      seats.find((seat) => seat.id === selected.id)
+    ) ?? [];
+
+  const allSeatsExist =
+    selectedSeats.length > 0 &&
+    selectedSeats.every((seat): seat is Seat => !!seat);
+
+  const allSeatsAvailable =
+    allSeatsExist &&
+    selectedSeats.every((seat) => seat?.status === "available");
 
   const uniqueSeatIds = new Set(
-    pricedSeats.map((seat) => seat.id)
+    draft?.seats.map((seat) => seat.id) ?? []
   );
 
   const validDraft =
-    !!event &&
     !!draft &&
+    !!event &&
     draft.seats.length > 0 &&
-    pricedSeats.length === draft.seats.length &&
-    uniqueSeatIds.size === pricedSeats.length;
+    uniqueSeatIds.size === draft.seats.length &&
+    allSeatsExist;
+
+  const pricedSeats = selectedSeats
+    .filter((seat): seat is Seat => !!seat)
+    .map((seat) => ({
+      id: seat.id,
+      price: seat.price,
+    }));
 
   const totalPrice = pricedSeats.reduce(
     (total, seat) => total + seat.price,
     0
   );
 
-  // Submit booking using authenticated session.
   const handleSubmit = async (
     e: FormEvent<HTMLFormElement>
   ) => {
@@ -85,10 +128,12 @@ export default function Checkout() {
 
     if (
       !event ||
+      !draft ||
       !validDraft ||
       !user ||
       submitting ||
-      seatsUnavailable
+      seatsUnavailable ||
+      !allSeatsAvailable
     ) {
       return;
     }
@@ -97,39 +142,40 @@ export default function Checkout() {
     setSubmitError(null);
 
     try {
+
       const booking = await createBooking({
         eventId: event.id,
         seats: pricedSeats.map((seat) => seat.id),
       });
 
-      navigate("/confirmation", {
+      navigate(`/confirmation/${booking.bookingId}`, {
         replace: true,
-        state: { booking },
       });
+
     } catch (err) {
       const message =
         err instanceof Error
           ? err.message
-          : "Unable to complete booking";
+          : "Unable to complete booking.";
 
       const status =
         err !== null &&
-        typeof err === "object" &&
-        "status" in err &&
-        typeof err.status === "number"
+          typeof err === "object" &&
+          "status" in err &&
+          typeof err.status === "number"
           ? err.status
           : undefined;
 
       const isSeatConflict =
         status === 409 ||
-        /already booked|already reserved|already taken|no longer available|seat.*unavailable|seat.*sold|unique constraint/i.test(
+        /already booked|already reserved|already taken|no longer available|seat.*unavailable|seat.*sold/i.test(
           message
         );
 
       if (isSeatConflict) {
         setSeatsUnavailable(true);
         setSubmitError(
-          "One or more selected seats have already been booked by another customer. Please return to the event page and choose different seats."
+          "One or more selected seats are no longer available. Please return to the event page and choose different seats."
         );
       } else if (status === 401) {
         setSubmitError(
@@ -143,18 +189,23 @@ export default function Checkout() {
     }
   };
 
-  // Invalid booking draft.
-  if (!validDraft || !event) {
+  if (loading || authLoading) {
+    return (
+      <main className="min-h-screen bg-gray-50 p-10 text-center">
+        <p className="text-gray-600">
+          Loading checkout information...
+        </p>
+      </main>
+    );
+  }
+
+  if (loadError) {
     return (
       <main className="min-h-screen bg-gray-50 p-10 text-center">
         <h1 className="text-2xl font-bold">
-          No valid booking found
+          Unable to Load Checkout
         </h1>
-
-        <p className="mt-3 text-gray-600">
-          Please select your seats again.
-        </p>
-
+        <p className="mt-3 text-red-600">{loadError}</p>
         <Link
           to="/"
           className="mt-5 inline-block text-purple-600 hover:underline"
@@ -165,18 +216,25 @@ export default function Checkout() {
     );
   }
 
-  // Wait until authentication has been checked.
-  if (authLoading) {
+  if (!validDraft || !event || !draft) {
     return (
       <main className="min-h-screen bg-gray-50 p-10 text-center">
-        <p className="text-gray-600">
-          Checking your session...
+        <h1 className="text-2xl font-bold">
+          No valid booking found
+        </h1>
+        <p className="mt-3 text-gray-600">
+          Please select your seats again.
         </p>
+        <Link
+          to="/"
+          className="mt-5 inline-block text-purple-600 hover:underline"
+        >
+          Back to Events
+        </Link>
       </main>
     );
   }
 
-  // Require login before confirming a booking.
   if (!user) {
     return (
       <main className="min-h-screen bg-gray-50 px-6 py-12">
@@ -247,7 +305,6 @@ export default function Checkout() {
           Review your order before confirming.
         </p>
 
-        {/* Order Summary */}
         <div className="mt-8 rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
           <h2 className="text-xl font-bold">
             Order Summary
@@ -279,7 +336,6 @@ export default function Checkout() {
           </div>
         </div>
 
-        {/* Authenticated Customer Information */}
         <form
           onSubmit={handleSubmit}
           className="mt-6 rounded-2xl border border-gray-200 bg-white p-8 shadow-sm"
@@ -295,7 +351,7 @@ export default function Checkout() {
           <div className="mt-6 space-y-4">
             <div>
               <p className="text-sm font-medium text-gray-500">
-                Full Name
+                Account Name
               </p>
               <p className="mt-1 rounded-lg bg-gray-50 px-4 py-3 font-semibold">
                 {user.name}
@@ -316,7 +372,27 @@ export default function Checkout() {
             Demo only. No payment will be processed.
           </p>
 
-          {/* Booking Error */}
+          {!allSeatsAvailable && (
+            <div
+              role="alert"
+              className="mt-6 rounded-xl border border-red-200 bg-red-50 p-5"
+            >
+              <h3 className="font-bold text-red-700">
+                Selected Seats Are No Longer Available
+              </h3>
+              <p className="mt-2 text-sm text-red-700">
+                One or more selected seats have already been reserved.
+                Please choose different seats.
+              </p>
+              <Link
+                to={`/events/${event.id}`}
+                className="mt-4 inline-block font-semibold text-purple-700 hover:underline"
+              >
+                Back to Seat Selection
+              </Link>
+            </div>
+          )}
+
           {submitError && (
             <div
               role="alert"
@@ -335,37 +411,39 @@ export default function Checkout() {
               {seatsUnavailable && (
                 <Link
                   to={`/events/${event.id}`}
-                  className="mt-5 inline-block rounded-lg bg-purple-600 px-5 py-3 text-sm font-semibold text-white hover:bg-purple-700"
+                  className="mt-4 inline-block font-semibold text-purple-700 hover:underline"
                 >
                   Back to Seat Selection
                 </Link>
               )}
 
-              {!seatsUnavailable &&
-                /session has expired/i.test(submitError) && (
-                  <Link
-                    to="/login"
-                    state={{
-                      from: "/checkout",
-                      draft,
-                    }}
-                    className="mt-4 inline-block font-semibold text-purple-700 hover:underline"
-                  >
-                    Log In Again
-                  </Link>
-                )}
+              {statusMessageIsSessionExpired(submitError) && (
+                <Link
+                  to="/login"
+                  state={{
+                    from: "/checkout",
+                    draft,
+                  }}
+                  className="mt-4 block font-semibold text-purple-700 hover:underline"
+                >
+                  Log In Again
+                </Link>
+              )}
             </div>
           )}
 
-          {/* Submit Button */}
           <button
             type="submit"
-            disabled={submitting || seatsUnavailable}
+            disabled={
+              submitting ||
+              seatsUnavailable ||
+              !allSeatsAvailable
+            }
             className="mt-6 w-full rounded-lg bg-purple-600 px-5 py-3 font-semibold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting
               ? "Processing..."
-              : seatsUnavailable
+              : !allSeatsAvailable || seatsUnavailable
                 ? "Seats Unavailable"
                 : "Confirm Booking"}
           </button>
@@ -373,4 +451,8 @@ export default function Checkout() {
       </div>
     </main>
   );
+}
+
+function statusMessageIsSessionExpired(message: string): boolean {
+  return /session has expired/i.test(message);
 }

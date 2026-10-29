@@ -1,5 +1,5 @@
 
-const API_URL = "http://localhost:3001/api/auth";
+const API_URL = "/api/auth";
 
 export interface AuthUser {
   userId: string;
@@ -8,138 +8,136 @@ export interface AuthUser {
   createdAt: string;
 }
 
-interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  message?: string;
+interface JavaAuthUser {
+  id: number;
+  email?: string;
 }
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
+interface CsrfResponse {
+  headerName: string;
+  token: string;
+}
+
+async function getCsrf(): Promise<CsrfResponse> {
+  const response = await fetch(`${API_URL}/csrf`, {
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
   });
 
-  const result: ApiResponse<T> = await response.json();
+  if (!response.ok) {
+    throw new Error("Failed to obtain CSRF token.");
+  }
 
-  if (!response.ok || !result.success) {
+  return response.json();
+}
+
+async function postWithCsrf<T>(
+  path: string,
+  body?: unknown
+): Promise<T> {
+  const csrf = await getCsrf();
+
+  const response = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      [csrf.headerName]: csrf.token,
+      ...(body === undefined
+        ? {}
+        : { "Content-Type": "application/json" }),
+    },
+    ...(body === undefined
+      ? {}
+      : { body: JSON.stringify(body) }),
+  });
+
+  if (!response.ok) {
     throw new Error(
-      result.message || "Authentication request failed."
+      `Authentication request failed (${response.status}).`
     );
   }
 
-  if (result.data === undefined) {
-    throw new Error("Response data is missing.");
-  }
+  return response.json();
+}
 
-  return result.data;
+function toAuthUser(user: JavaAuthUser): AuthUser {
+  return {
+    userId: String(user.id),
+    name: user.email?.split("@")[0] ?? "User",
+    email: user.email ?? "",
+    createdAt: "",
+  };
 }
 
 export async function loginUser(
   email: string,
   password: string
 ): Promise<AuthUser> {
-  return request<AuthUser>("/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
+  const result = await postWithCsrf<JavaAuthUser>(
+    "/login",
+    { email, password }
+  );
+
+  return toAuthUser(result);
 }
 
 export async function registerUser(
-  name: string,
+  _name: string,
   email: string,
   password: string
 ): Promise<AuthUser> {
-  return request<AuthUser>("/register", {
-    method: "POST",
-    body: JSON.stringify({ name, email, password }),
-  });
+  // The Java backend currently registers users with email and password.
+  // Preserve the name parameter for compatibility with the UI.
+  void _name;
+
+  const result = await postWithCsrf<JavaAuthUser>(
+    "/register",
+    { email, password }
+  );
+
+  return toAuthUser(result);
 }
 
 export async function getCurrentUser():
   Promise<AuthUser | null> {
-  try {
-    return await request<AuthUser>("/me");
-  } catch {
-    return null;
-  }
-}
-
-export async function logoutUser(): Promise<void> {
-  const response = await fetch(`${API_URL}/logout`, {
-    method: "POST",
+  const response = await fetch(`${API_URL}/me`, {
     credentials: "include",
   });
 
-  if (!response.ok) {
-    throw new Error("Failed to log out.");
+  if (response.status === 401) {
+    return null;
   }
+
+  if (!response.ok) {
+    throw new Error("Failed to restore session.");
+  }
+
+  const result: JavaAuthUser = await response.json();
+
+  return toAuthUser(result);
+}
+
+export async function logoutUser(): Promise<void> {
+  await postWithCsrf<{ message: string }>("/logout");
 }
 
 export async function updateProfileName(
-  name: string
+  _name: string
 ): Promise<AuthUser> {
-  const response = await fetch(
-    "http://localhost:3001/api/auth/me",
-    {
-      method: "PATCH",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ name }),
-    }
+  void _name;
+
+  throw new Error(
+    "Profile updates are not yet supported by the Java backend."
   );
-
-  const result: {
-    success: boolean;
-    data?: AuthUser;
-    message?: string;
-  } = await response.json();
-
-  if (!response.ok || !result.success || !result.data) {
-    throw new Error(
-      result.message || "Failed to update profile."
-    );
-  }
-
-  return result.data;
 }
 
 export async function changePassword(
-  currentPassword: string,
-  newPassword: string
+  _currentPassword: string,
+  _newPassword: string
 ): Promise<void> {
-  const response = await fetch(
-    "http://localhost:3001/api/auth/password",
-    {
-      method: "PATCH",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        currentPassword,
-        newPassword,
-      }),
-    }
+  void _currentPassword;
+  void _newPassword;
+
+  throw new Error(
+    "Password changes are not yet supported by the Java backend."
   );
-
-  const result: {
-    success: boolean;
-    message?: string;
-  } = await response.json();
-
-  if (!response.ok || !result.success) {
-    throw new Error(
-      result.message || "Failed to change password."
-    );
-  }
 }

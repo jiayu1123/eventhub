@@ -203,10 +203,9 @@ function App() {
   }: {
     isActive: boolean;
   }) =>
-    `font-medium transition-colors ${
-      isActive
-        ? "text-purple-700"
-        : "text-gray-600 hover:text-purple-700"
+    `font-medium transition-colors ${isActive
+      ? "text-purple-700"
+      : "text-gray-600 hover:text-purple-700"
     }`;
 
   return (
@@ -311,7 +310,7 @@ function App() {
         />
 
         <Route
-          path="/confirmation"
+          path="/confirmation/:bookingId"
           element={<BookingConfirmation />}
         />
 

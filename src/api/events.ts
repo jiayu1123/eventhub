@@ -1,44 +1,69 @@
-import type { Event } from "../types/event";
+import type { Event, EventCategory } from "../types/event";
 
-interface EventsResponse {
-  success: boolean;
-  count: number;
-  data: Event[];
+interface JavaEvent {
+  id: number;
+  title: string;
+  city: string;
+  venue: string;
+  priceCents: number;
+  startsAt: string;
+}
+
+function inferCategory(title: string): EventCategory {
+  const value = title.toLowerCase();
+
+  if (
+    value.includes("celtics") ||
+    value.includes("knicks") ||
+    value.includes("basketball") ||
+    value.includes("sports")
+  ) {
+    return "Sports";
+  }
+
+  if (
+    value.includes("festival")
+  ) {
+    return "Festival";
+  }
+
+  return "Concert";
+}
+
+function toFrontendEvent(event: JavaEvent): Event {
+  return {
+    id: event.id,
+    title: event.title,
+    location: `${event.venue}, ${event.city}`,
+    date: new Date(event.startsAt).toLocaleString("en-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }),
+    price: event.priceCents / 100,
+    category: inferCategory(event.title),
+  };
 }
 
 export async function fetchEvents(): Promise<Event[]> {
-  const response = await fetch("http://localhost:3001/api/events");
+  const response = await fetch("/api/events");
 
   if (!response.ok) {
     throw new Error("Failed to fetch events");
   }
 
-  const result: EventsResponse = await response.json();
+  const data: JavaEvent[] = await response.json();
 
-  if (!result.success) {
-    throw new Error("API returned an error");
-  }
-
-  return result.data;
+  return data.map(toFrontendEvent);
 }
 
 export async function fetchEventById(id: number): Promise<Event> {
-  const response = await fetch(
-    `http://localhost:3001/api/events/${id}`
-  );
+  const response = await fetch(`/api/events/${id}`);
 
   if (!response.ok) {
     throw new Error("Failed to fetch event details");
   }
 
-  const result: {
-    success: boolean;
-    data: Event;
-  } = await response.json();
+  const data: JavaEvent = await response.json();
 
-  if (!result.success) {
-    throw new Error("Event not found");
-  }
-
-  return result.data;
+  return toFrontendEvent(data);
 }

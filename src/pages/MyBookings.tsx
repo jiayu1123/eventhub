@@ -2,157 +2,132 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import type { Booking } from "../types/booking";
 
-interface EventInfo {
-  id: number;
-  title: string;
-  date: string;
-  location: string;
+interface JavaBookingSeat {
+  seatLabel: string;
+  priceCents: number;
 }
 
-interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  message?: string;
-  count?: number;
+interface JavaBooking {
+  bookingId: number;
+  eventId: number;
+  eventTitle: string;
+  city: string;
+  venue: string;
+  startsAt: string;
+  createdAt: string;
+  status: string;
+  seats: JavaBookingSeat[];
 }
-
-const API_URL = "http://localhost:3001/api";
 
 function formatDate(value: string): string {
   const date = new Date(value);
 
   return Number.isNaN(date.getTime())
     ? value
-    : date.toLocaleString();
+    : date.toLocaleString("en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
 }
 
-async function fetchEventInfo(
-  eventId: number
-): Promise<EventInfo> {
-  const response = await fetch(
-    `${API_URL}/events/${eventId}`
+function formatMoney(cents: number): string {
+  return (cents / 100).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+  });
+}
+
+function getTotalCents(booking: JavaBooking): number {
+  return booking.seats.reduce(
+    (total, seat) => total + seat.priceCents,
+    0
   );
+}
 
-  const result: ApiResponse<EventInfo> =
-    await response.json();
+async function getCsrf(): Promise<{
+  headerName: string;
+  token: string;
+}> {
+  const response = await fetch("/api/auth/csrf", {
+    credentials: "include",
+  });
 
-  if (!response.ok || !result.success || !result.data) {
+  if (!response.ok) {
+    throw new Error("Unable to obtain CSRF token.");
+  }
+
+  return response.json();
+}
+
+async function fetchMyBookings(): Promise<JavaBooking[]> {
+  const response = await fetch("/api/bookings/me", {
+    credentials: "include",
+  });
+
+  if (response.status === 401) {
     throw new Error(
-      result.message || "Event details are unavailable."
+      "Your session has expired. Please log in again."
     );
   }
 
-  return result.data;
+  if (!response.ok) {
+    throw new Error(
+      `Failed to load bookings (${response.status}).`
+    );
+  }
+
+  const data: unknown = await response.json();
+
+  if (!Array.isArray(data)) {
+    throw new Error("Unexpected booking response format.");
+  }
+
+  return data as JavaBooking[];
 }
 
 export default function MyBookings() {
   const { user, loading: authLoading } = useAuth();
 
-  const [bookings, setBookings] = useState<Booking[]>([]);
-  const [eventCache, setEventCache] = useState<
-    Record<number, EventInfo>
-  >({});
+  const userId = user?.userId;
 
-  const [selectedBooking, setSelectedBooking] =
-    useState<Booking | null>(null);
+  const [bookings, setBookings] = useState<JavaBooking[]>([]);
+  const [selectedBookingId, setSelectedBookingId] =
+    useState<number | null>(null);
 
   const [loading, setLoading] = useState(true);
-  const [detailsLoading, setDetailsLoading] =
-    useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] =
     useState(false);
 
   const [error, setError] = useState("");
-  const [eventError, setEventError] = useState("");
-  const [successMessage, setSuccessMessage] =
-    useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
-  // Load bookings automatically for the logged-in user.
+
   useEffect(() => {
+    if (authLoading || !userId) {
+      return;
+    }
+
     let active = true;
-
-    if (authLoading) {
-      return;
-    }
-
-    if (!user) {
-      setBookings([]);
-      setEventCache({});
-      setSelectedBooking(null);
-      setLoading(false);
-      return;
-    }
-
-    // Reset state when the account changes.
-    setBookings([]);
-    setEventCache({});
-    setSelectedBooking(null);
-    setShowCancelConfirm(false);
-    setError("");
-    setSuccessMessage("");
-    setLoading(true);
 
     async function loadBookings() {
       try {
-        const response = await fetch(
-          `${API_URL}/bookings`,
-          {
-            credentials: "include",
-          }
-        );
+        const data = await fetchMyBookings();
 
-        const result: ApiResponse<Booking[]> =
-          await response.json();
-
-        if (
-          !response.ok ||
-          !result.success ||
-          !Array.isArray(result.data)
-        ) {
-          throw new Error(
-            result.message || "Failed to load bookings."
+        if (active) {
+          setBookings(data);
+          setError("");
+        }
+      } catch (err) {
+        if (active) {
+          setBookings([]);
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load bookings."
           );
         }
-
-        if (!active) return;
-
-        const history = result.data;
-        setBookings(history);
-
-        // Load event information for booking cards.
-        const eventIds = [
-          ...new Set(
-            history.map((booking) => booking.eventId)
-          ),
-        ];
-
-        const eventResults = await Promise.allSettled(
-          eventIds.map((id) => fetchEventInfo(id))
-        );
-
-        if (!active) return;
-
-        const loadedEvents: Record<number, EventInfo> = {};
-
-        for (const eventResult of eventResults) {
-          if (eventResult.status === "fulfilled") {
-            loadedEvents[eventResult.value.id] =
-              eventResult.value;
-          }
-        }
-
-        setEventCache(loadedEvents);
-      } catch (err) {
-        if (!active) return;
-
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to load bookings."
-        );
       } finally {
         if (active) {
           setLoading(false);
@@ -165,101 +140,86 @@ export default function MyBookings() {
     return () => {
       active = false;
     };
-  }, [user?.userId, authLoading]);
+  }, [userId, authLoading]);
 
-  // Open booking details.
-  async function handleViewDetails(booking: Booking) {
-    if (loading || cancelling || detailsLoading) return;
 
-    setSelectedBooking(booking);
+  const selectedBooking =
+    bookings.find(
+      (booking) => booking.bookingId === selectedBookingId
+    ) ?? null;
+
+  function handleViewDetails(bookingId: number) {
+    if (cancelling) return;
+
+    setSelectedBookingId(bookingId);
     setShowCancelConfirm(false);
     setError("");
-    setEventError("");
     setSuccessMessage("");
-
-    if (eventCache[booking.eventId]) {
-      return;
-    }
-
-    setDetailsLoading(true);
-
-    try {
-      const eventInfo = await fetchEventInfo(
-        booking.eventId
-      );
-
-      setEventCache((previous) => ({
-        ...previous,
-        [eventInfo.id]: eventInfo,
-      }));
-    } catch {
-      setEventError(
-        "Event details could not be loaded."
-      );
-    } finally {
-      setDetailsLoading(false);
-    }
   }
 
   function closeDetails() {
     if (cancelling) return;
 
-    setSelectedBooking(null);
+    setSelectedBookingId(null);
     setShowCancelConfirm(false);
-    setEventError("");
   }
 
-  // Cancel only the current user's booking.
   async function handleCancelBooking() {
     if (
       !selectedBooking ||
-      !user ||
-      cancelling ||
-      loading ||
-      detailsLoading
+      selectedBooking.status !== "CONFIRMED" ||
+      cancelling
     ) {
       return;
     }
 
-    const bookingToCancel = selectedBooking;
+    const bookingId = selectedBooking.bookingId;
 
     setCancelling(true);
     setError("");
     setSuccessMessage("");
 
     try {
+      const csrf = await getCsrf();
+
       const response = await fetch(
-        `${API_URL}/bookings/${encodeURIComponent(
-          bookingToCancel.bookingId
-        )}`,
+        `/api/bookings/${bookingId}/cancel`,
         {
-          method: "DELETE",
+          method: "POST",
           credentials: "include",
+          headers: {
+            [csrf.headerName]: csrf.token,
+          },
         }
       );
 
-      const result: ApiResponse<never> =
-        await response.json();
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error(
+            "Your session has expired. Please log in again."
+          );
+        }
 
-      if (!response.ok || !result.success) {
+        if (response.status === 403) {
+          throw new Error(
+            "Cancellation was rejected. Please refresh and try again."
+          );
+        }
+
         throw new Error(
-          result.message || "Failed to cancel booking."
+          `Failed to cancel booking (${response.status}).`
         );
       }
 
-      setBookings((previous) =>
-        previous.filter(
-          (item) =>
-            item.bookingId !== bookingToCancel.bookingId
-        )
-      );
+      // Reload persisted history after cancellation.
+      const updatedBookings = await fetchMyBookings();
 
-      setSelectedBooking(null);
+      setBookings(updatedBookings);
+      setSelectedBookingId(bookingId);
       setShowCancelConfirm(false);
-      setEventError("");
 
       setSuccessMessage(
-        "Booking cancelled successfully. Your seats are now available again."
+        `Booking #${bookingId} was cancelled successfully. The reserved seats have been released.`
       );
     } catch (err) {
       setError(
@@ -267,14 +227,12 @@ export default function MyBookings() {
           ? err.message
           : "Failed to cancel booking."
       );
-
       setShowCancelConfirm(false);
     } finally {
       setCancelling(false);
     }
   }
 
-  // Wait for authentication to finish.
   if (authLoading) {
     return (
       <main className="mx-auto max-w-4xl px-6 py-12">
@@ -285,7 +243,6 @@ export default function MyBookings() {
     );
   }
 
-  // Unauthenticated visitors cannot view bookings.
   if (!user) {
     return (
       <main className="mx-auto max-w-4xl px-6 py-12">
@@ -308,10 +265,6 @@ export default function MyBookings() {
       </main>
     );
   }
-
-  const selectedEvent = selectedBooking
-    ? eventCache[selectedBooking.eventId]
-    : undefined;
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-12">
@@ -339,7 +292,6 @@ export default function MyBookings() {
         </Link>
       </div>
 
-      {/* Success Message */}
       {successMessage && (
         <div
           role="status"
@@ -349,7 +301,6 @@ export default function MyBookings() {
         </div>
       )}
 
-      {/* Error Message */}
       {error && (
         <div
           role="alert"
@@ -359,7 +310,6 @@ export default function MyBookings() {
         </div>
       )}
 
-      {/* Booking History */}
       <section className="mt-8">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-2xl font-bold">
@@ -368,9 +318,7 @@ export default function MyBookings() {
 
           <span className="rounded-full bg-purple-100 px-3 py-1 text-sm font-semibold text-purple-700">
             {bookings.length}{" "}
-            {bookings.length === 1
-              ? "booking"
-              : "bookings"}
+            {bookings.length === 1 ? "booking" : "bookings"}
           </span>
         </div>
 
@@ -378,117 +326,124 @@ export default function MyBookings() {
           <div className="mt-5 rounded-xl border bg-white p-8 text-center text-gray-600">
             Loading your bookings...
           </div>
-        ) : error && bookings.length === 0 ? null : (
-          bookings.length === 0 ? (
-            <div className="mt-5 rounded-xl border bg-white p-8 text-center">
-              <h3 className="text-lg font-bold">
-                No bookings yet
-              </h3>
+        ) : bookings.length === 0 && !error ? (
+          <div className="mt-5 rounded-xl border bg-white p-8 text-center">
+            <h3 className="text-lg font-bold">
+              No bookings yet
+            </h3>
 
-              <p className="mt-2 text-gray-600">
-                You haven't made any reservations with
-                this account yet.
-              </p>
+            <p className="mt-2 text-gray-600">
+              You haven't made any reservations with this
+              account yet.
+            </p>
 
-              <Link
-                to="/"
-                className="mt-5 inline-block rounded-lg bg-purple-600 px-5 py-3 font-semibold text-white hover:bg-purple-700"
-              >
-                Explore Events
-              </Link>
-            </div>
-          ) : (
-            <div className="mt-5 space-y-4">
-              {bookings.map((booking) => {
-                const event = eventCache[booking.eventId];
-                const isSelected =
-                  selectedBooking?.bookingId ===
-                  booking.bookingId;
+            <Link
+              to="/"
+              className="mt-5 inline-block rounded-lg bg-purple-600 px-5 py-3 font-semibold text-white hover:bg-purple-700"
+            >
+              Explore Events
+            </Link>
+          </div>
+        ) : (
+          <div className="mt-5 space-y-4">
+            {bookings.map((booking) => {
+              const isSelected =
+                selectedBookingId === booking.bookingId;
 
-                return (
-                  <article
-                    key={booking.bookingId}
-                    className={`rounded-xl border bg-white p-6 shadow-sm ${
-                      isSelected
-                        ? "border-purple-500"
-                        : "border-gray-200"
-                    }`}
+              const isCancelled =
+                booking.status === "CANCELLED";
+
+              return (
+                <article
+                  key={booking.bookingId}
+                  className={`rounded-xl border bg-white p-6 shadow-sm ${
+                    isSelected
+                      ? "border-purple-500"
+                      : "border-gray-200"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm text-gray-500">
+                        Booking #{booking.bookingId}
+                      </p>
+
+                      <h3 className="mt-2 text-xl font-bold">
+                        {booking.eventTitle}
+                      </h3>
+
+                      <p className="mt-2 text-sm text-gray-600">
+                        {formatDate(booking.startsAt)}
+                        {" · "}
+                        {booking.venue}, {booking.city}
+                      </p>
+
+                      <span
+                        className={`mt-3 inline-block rounded-full px-3 py-1 text-xs font-semibold ${
+                          isCancelled
+                            ? "bg-gray-100 text-gray-600"
+                            : "bg-green-100 text-green-700"
+                        }`}
+                      >
+                        {booking.status}
+                      </span>
+                    </div>
+
+                    <p className="text-xl font-bold text-purple-700">
+                      {formatMoney(getTotalCents(booking))}
+                    </p>
+                  </div>
+
+                  <div className="mt-4 text-sm text-gray-600">
+                    <p>
+                      Seats:{" "}
+                      {booking.seats
+                        .map((seat) => seat.seatLabel)
+                        .join(", ")}
+                    </p>
+
+                    <p className="mt-1">
+                      Booked: {formatDate(booking.createdAt)}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={cancelling}
+                    onClick={() =>
+                      handleViewDetails(booking.bookingId)
+                    }
+                    className="mt-5 rounded-lg border border-purple-300 px-5 py-2 font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-50"
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div>
-                        <p className="text-sm text-gray-500">
-                          {booking.bookingId}
-                        </p>
-
-                        <h3 className="mt-2 text-xl font-bold">
-                          {event
-                            ? event.title
-                            : `Event #${booking.eventId}`}
-                        </h3>
-
-                        {event && (
-                          <p className="mt-2 text-sm text-gray-600">
-                            {formatDate(event.date)}
-                            {" · "}
-                            {event.location}
-                          </p>
-                        )}
-                      </div>
-
-                      <p className="text-xl font-bold text-purple-700">
-                        ${booking.totalPrice.toFixed(2)}
-                      </p>
-                    </div>
-
-                    <div className="mt-4 text-sm text-gray-600">
-                      <p>
-                        Seats:{" "}
-                        {booking.seats
-                          .map((seat) => seat.id)
-                          .join(", ")}
-                      </p>
-
-                      <p className="mt-1">
-                        Booked:{" "}
-                        {formatDate(booking.createdAt)}
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled={
-                        loading ||
-                        cancelling ||
-                        detailsLoading
-                      }
-                      onClick={() =>
-                        handleViewDetails(booking)
-                      }
-                      className="mt-5 rounded-lg border border-purple-300 px-5 py-2 font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-50"
-                    >
-                      {isSelected
-                        ? "Viewing Details"
-                        : "View Details"}
-                    </button>
-                  </article>
-                );
-              })}
-            </div>
-          )
+                    {isSelected
+                      ? "Viewing Details"
+                      : "View Details"}
+                  </button>
+                </article>
+              );
+            })}
+          </div>
         )}
       </section>
 
-      {/* Selected Booking Details */}
       {selectedBooking && (
         <section className="mt-8 rounded-xl border bg-white p-6 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-bold text-green-700">
-                Booking Confirmed
+              <h2
+                className={`text-2xl font-bold ${
+                  selectedBooking.status === "CANCELLED"
+                    ? "text-gray-600"
+                    : "text-green-700"
+                }`}
+              >
+                {selectedBooking.status === "CANCELLED"
+                  ? "Booking Cancelled"
+                  : "Booking Confirmed"}
               </h2>
 
               <p className="mt-2 text-sm text-gray-500">
-                Reference: {selectedBooking.bookingId}
+                Reference: #{selectedBooking.bookingId}
               </p>
             </div>
 
@@ -502,54 +457,42 @@ export default function MyBookings() {
             </button>
           </div>
 
-          {/* Event Information */}
           <div className="mt-6 rounded-lg bg-purple-50 p-5">
-            <h3 className="text-lg font-bold text-gray-900">
+            <h3 className="text-lg font-bold">
               Event Details
             </h3>
 
-            {selectedEvent ? (
-              <div className="mt-3 space-y-2">
-                <p className="text-xl font-semibold">
-                  {selectedEvent.title}
-                </p>
+            <p className="mt-3 text-xl font-semibold">
+              {selectedBooking.eventTitle}
+            </p>
 
-                <p className="text-gray-700">
-                  Date: {formatDate(selectedEvent.date)}
-                </p>
+            <p className="mt-2 text-gray-700">
+              Date: {formatDate(selectedBooking.startsAt)}
+            </p>
 
-                <p className="text-gray-700">
-                  Location: {selectedEvent.location}
-                </p>
+            <p className="mt-2 text-gray-700">
+              Location: {selectedBooking.venue},{" "}
+              {selectedBooking.city}
+            </p>
 
-                <Link
-                  to={`/events/${selectedEvent.id}`}
-                  className="mt-3 inline-block font-semibold text-purple-700 hover:underline"
-                >
-                  View Event →
-                </Link>
-              </div>
-            ) : (
-              <p className="mt-3 text-gray-600">
-                {detailsLoading
-                  ? "Loading event details..."
-                  : eventError ||
-                    "Event details are unavailable."}
-              </p>
-            )}
+            <Link
+              to={`/events/${selectedBooking.eventId}`}
+              className="mt-3 inline-block font-semibold text-purple-700 hover:underline"
+            >
+              View Event →
+            </Link>
           </div>
 
-          {/* Customer Information */}
-          <div className="mt-6 space-y-4">
+          <div className="mt-6 space-y-3">
             <div className="flex justify-between gap-4">
               <span>Customer</span>
-              <strong>{selectedBooking.customerName}</strong>
+              <strong>{user.name}</strong>
             </div>
 
             <div className="flex justify-between gap-4">
               <span>Email</span>
               <span className="break-all text-right">
-                {selectedBooking.customerEmail}
+                {user.email}
               </span>
             </div>
 
@@ -561,7 +504,6 @@ export default function MyBookings() {
             </div>
           </div>
 
-          {/* Seat Breakdown */}
           <div className="mt-8">
             <h3 className="text-lg font-bold">
               Seat Breakdown
@@ -570,78 +512,77 @@ export default function MyBookings() {
             <div className="mt-4 space-y-3">
               {selectedBooking.seats.map((seat) => (
                 <div
-                  key={seat.id}
+                  key={seat.seatLabel}
                   className="flex justify-between rounded-lg border px-4 py-3"
                 >
-                  <span>Seat {seat.id}</span>
+                  <span>Seat {seat.seatLabel}</span>
                   <strong>
-                    ${seat.price.toFixed(2)}
+                    {formatMoney(seat.priceCents)}
                   </strong>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Total */}
           <div className="mt-6 flex justify-between border-t pt-5 text-xl">
-            <strong>Total</strong>
-
+            <strong>Reservation Total</strong>
             <strong className="text-purple-700">
-              ${selectedBooking.totalPrice.toFixed(2)}
+              {formatMoney(getTotalCents(selectedBooking))}
             </strong>
           </div>
 
-          {/* Cancel Booking */}
-          <div className="mt-8 border-t pt-6">
-            {!showCancelConfirm ? (
-              <button
-                type="button"
-                disabled={cancelling || detailsLoading}
-                onClick={() =>
-                  setShowCancelConfirm(true)
-                }
-                className="w-full rounded-lg border border-red-300 px-5 py-3 font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
-              >
-                Cancel Booking
-              </button>
-            ) : (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-5">
-                <h3 className="font-bold text-red-700">
-                  Are you sure you want to cancel?
-                </h3>
+          {selectedBooking.status === "CONFIRMED" && (
+            <div className="mt-8 border-t pt-6">
+              {!showCancelConfirm ? (
+                <button
+                  type="button"
+                  disabled={cancelling}
+                  onClick={() =>
+                    setShowCancelConfirm(true)
+                  }
+                  className="w-full rounded-lg border border-red-300 px-5 py-3 font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                >
+                  Cancel Booking
+                </button>
+              ) : (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-5">
+                  <h3 className="font-bold text-red-700">
+                    Are you sure you want to cancel?
+                  </h3>
 
-                <p className="mt-2 text-sm text-gray-700">
-                  This will cancel your booking and release
-                  all reserved seats. This action cannot
-                  be undone.
-                </p>
+                  <p className="mt-2 text-sm text-gray-700">
+                    This will cancel your booking and release
+                    all reserved seats. Your booking will remain
+                    in your history.
+                  </p>
 
-                <div className="mt-5 flex gap-3">
-                  <button
-                    type="button"
-                    disabled={cancelling}
-                    onClick={() =>
-                      setShowCancelConfirm(false)
-                    }
-                    className="flex-1 rounded-lg border bg-white px-4 py-3 font-semibold disabled:opacity-50"
-                  >
-                    Keep Booking
-                  </button>
+                  <div className="mt-5 flex gap-3">
+                    <button
+                      type="button"
+                      disabled={cancelling}
+                      onClick={() =>
+                        setShowCancelConfirm(false)
+                      }
+                      className="flex-1 rounded-lg border bg-white px-4 py-3 font-semibold disabled:opacity-50"
+                    >
+                      Keep Booking
+                    </button>
 
-                  <button
-                    type="button"
-                    disabled={cancelling}
-                    onClick={handleCancelBooking}
-                    className="flex-1 rounded-lg bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-                  >
-                    {cancelling
-                      ? "Cancelling..."
-                      : "Confirm Cancellation"}
-                  </button>
+                    <button
+                      type="button"
+                      disabled={cancelling}
+                      onClick={handleCancelBooking}
+                      className="flex-1 rounded-lg bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {cancelling
+                        ? "Cancelling..."
+                        : "Confirm Cancellation"}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </section>
       )}
     </main>
