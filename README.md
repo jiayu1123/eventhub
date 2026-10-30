@@ -284,6 +284,12 @@ Browse events and search by city, category, or keyword.
 
 ![EventHub Homepage](screenshots/homepage.png)
 
+### AI-Powered Event Search
+
+Discover events using natural-language queries powered by OpenAI and PostgreSQL.
+
+![AI Event Search](screenshots/ai-search.png)
+
 ### Event Details
 
 View event information, ticket pricing, and booking options.
