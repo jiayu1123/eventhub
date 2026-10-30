@@ -30,6 +30,53 @@ public class OpenAiClient {
                 .build();
     }
 
+
+    /**
+     * Sends a Responses API request and returns the full JSON response.
+     * Used by the booking agent to process function calls.
+     */
+    public JsonNode createResponse(Map<String, Object> payload) {
+        String apiKey = System.getenv("OPENAI_API_KEY");
+
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException(
+                    "OPENAI_API_KEY is not configured");
+        }
+
+        try {
+            String requestBody = objectMapper.writeValueAsString(payload);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(API_URL))
+                    .timeout(Duration.ofSeconds(60))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(
+                    request,
+                    HttpResponse.BodyHandlers.ofString()
+            );
+
+            if (response.statusCode() != 200) {
+                throw new IllegalStateException(
+                        "OpenAI API request failed with status "
+                                + response.statusCode());
+            }
+
+            return objectMapper.readTree(response.body());
+
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "OpenAI request was interrupted", exception);
+        } catch (IOException exception) {
+            throw new IllegalStateException(
+                    "Unable to communicate with OpenAI", exception);
+        }
+    }
+
     public String generateResponse(
             String instructions,
             String userMessage) {

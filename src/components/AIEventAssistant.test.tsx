@@ -1,79 +1,68 @@
+import { beforeEach, expect, it, vi } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
-
 import AIEventAssistant from "./AIEventAssistant";
+import { searchBookingAgent } from "../api/aiBookingAgent";
+import { createDraftFromProposal } from "../api/aiBookingDraft";
 
-const mockFetch = vi.fn();
+const navigateMock = vi.fn();
+
+vi.mock("react-router-dom", () => ({
+  useNavigate: () => navigateMock,
+}));
+
+vi.mock("../api/aiBookingAgent", () => ({
+  searchBookingAgent: vi.fn(),
+}));
+
+vi.mock("../api/aiBookingDraft", () => ({
+  createDraftFromProposal: vi.fn(),
+}));
+
+const searchMock = vi.mocked(searchBookingAgent);
+const draftMock = vi.mocked(createDraftFromProposal);
+
+const proposal = {
+  eventId: 4,
+  eventTitle: "Boston Live Music Night",
+  seats: ["A1", "A2"],
+  totalPriceCents: 13000,
+};
 
 beforeEach(() => {
-  vi.stubGlobal("fetch", mockFetch);
-
-  mockFetch.mockReset();
+  vi.clearAllMocks();
 });
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
-function renderAssistant() {
-  return render(
-    <MemoryRouter>
-      <AIEventAssistant />
-    </MemoryRouter>
-  );
-}
-
-function mockCsrfResponse() {
-  mockFetch.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({
-      token: "test-csrf-token",
-      headerName: "X-XSRF-TOKEN",
-    }),
-  });
-}
-
-test("shows welcome message and disables empty submission", () => {
-  renderAssistant();
+it("shows welcome message and disables empty submission", () => {
+  render(<AIEventAssistant />);
 
   expect(
-    screen.getByText(/Hi! Tell me what kind of events/i)
+    screen.getByText(/Hi! I can help you find events/i)
   ).toBeInTheDocument();
 
   expect(
     screen.getByRole("button", { name: "Send" })
   ).toBeDisabled();
-
-  expect(mockFetch).not.toHaveBeenCalled();
 });
 
-test("shows loading state while searching", async () => {
-  const user = userEvent.setup();
-
-  mockCsrfResponse();
-
-  mockFetch.mockImplementationOnce(
+it("shows loading state while searching", async () => {
+  searchMock.mockImplementation(
     () => new Promise(() => {})
   );
 
-  renderAssistant();
+  render(<AIEventAssistant />);
 
-  await user.type(
-    screen.getByRole("textbox", {
-      name: "Describe the events you want to find",
-    }),
-    "Find events in Boston"
+  fireEvent.change(
+    screen.getByRole("textbox"),
+    { target: { value: "Find events in Boston" } }
   );
 
-  await user.click(
+  fireEvent.click(
     screen.getByRole("button", { name: "Send" })
   );
 
   expect(
-    await screen.findByText("Searching events...")
+    await screen.findByText(/AI is searching events/i)
   ).toBeInTheDocument();
 
   expect(
@@ -81,135 +70,176 @@ test("shows loading state while searching", async () => {
   ).toBeDisabled();
 });
 
-test("displays matching events with correct details link", async () => {
-  const user = userEvent.setup();
-
-  mockCsrfResponse();
-
-  mockFetch.mockResolvedValueOnce({
-    ok: true,
-    status: 200,
-    json: async () => ({
-      totalResults: 1,
-      events: [
-        {
-          id: 2,
-          title: "Live Music Night",
-          city: "Boston",
-          venue: "MGM Music Hall",
-          startsAt: "2026-11-21T01:00:00Z",
-          priceCents: 6500,
-        },
-      ],
-    }),
+it("displays validated booking proposal", async () => {
+  searchMock.mockResolvedValue({
+    message: "I found two available adjacent seats.",
+    toolsUsed: [
+      "search_events",
+      "get_available_seats",
+      "propose_booking",
+    ],
+    proposal,
   });
 
-  renderAssistant();
+  render(<AIEventAssistant />);
 
-  await user.type(
-    screen.getByRole("textbox", {
-      name: "Describe the events you want to find",
-    }),
-    "Find events in Boston under $100"
+  fireEvent.change(
+    screen.getByRole("textbox"),
+    {
+      target: {
+        value: "Find two adjacent seats in Boston",
+      },
+    }
   );
 
-  await user.click(
+  fireEvent.click(
     screen.getByRole("button", { name: "Send" })
   );
 
   expect(
-    await screen.findByText("Live Music Night")
+    await screen.findByText("Boston Live Music Night")
   ).toBeInTheDocument();
 
+  expect(screen.getByText("A1")).toBeInTheDocument();
+  expect(screen.getByText("A2")).toBeInTheDocument();
+  expect(screen.getByText("$130.00")).toBeInTheDocument();
+
   expect(
-    screen.getByText("MGM Music Hall, Boston")
+    screen.getByRole("button", { name: "Review Booking" })
   ).toBeInTheDocument();
-
-  expect(
-    screen.getByText("$65.00")
-  ).toBeInTheDocument();
-
-  expect(
-    screen.getByRole("link", {
-      name: "View Event Details",
-    })
-  ).toHaveAttribute("href", "/events/2");
-
-  await waitFor(() => {
-    expect(mockFetch).toHaveBeenCalledWith(
-      "/api/ai/events/search",
-      expect.objectContaining({
-        method: "POST",
-        credentials: "include",
-        headers: expect.objectContaining({
-          "X-XSRF-TOKEN": "test-csrf-token",
-        }),
-        body: JSON.stringify({
-          message: "Find events in Boston under $100",
-        }),
-      })
-    );
-  });
 });
 
-test("shows helpful message when no events match", async () => {
-  const user = userEvent.setup();
-
-  mockCsrfResponse();
-
-  mockFetch.mockResolvedValueOnce({
-    ok: true,
-    status: 200,
-    json: async () => ({
-      totalResults: 0,
-      events: [],
-    }),
+it("does not show booking button when proposal is null", async () => {
+  searchMock.mockResolvedValue({
+    message: "I couldn't find matching events.",
+    toolsUsed: ["search_events"],
+    proposal: null,
   });
 
-  renderAssistant();
+  render(<AIEventAssistant />);
 
-  await user.type(
-    screen.getByRole("textbox", {
-      name: "Describe the events you want to find",
-    }),
-    "Find events in Chicago"
-  );
+  fireEvent.change(screen.getByRole("textbox"), {
+    target: { value: "Find events in Chicago" },
+  });
 
-  await user.click(
+  fireEvent.click(
     screen.getByRole("button", { name: "Send" })
   );
 
   expect(
-    await screen.findByText(/couldn't find any matching events/i)
+    await screen.findByText(/couldn't find matching events/i)
   ).toBeInTheDocument();
+
+  expect(
+    screen.queryByRole("button", { name: "Review Booking" })
+  ).not.toBeInTheDocument();
 });
 
-test("shows login message when AI API returns 401", async () => {
-  const user = userEvent.setup();
-
-  mockCsrfResponse();
-
-  mockFetch.mockResolvedValueOnce({
-    ok: false,
-    status: 401,
-  });
-
-  renderAssistant();
-
-  await user.type(
-    screen.getByRole("textbox", {
-      name: "Describe the events you want to find",
-    }),
-    "Find Boston events"
+it("shows login message when AI API returns 401", async () => {
+  searchMock.mockRejectedValue(
+    new Error("Please log in to use the AI Booking Agent.")
   );
 
-  await user.click(
+  render(<AIEventAssistant />);
+
+  fireEvent.change(screen.getByRole("textbox"), {
+    target: { value: "Find Boston events" },
+  });
+
+  fireEvent.click(
     screen.getByRole("button", { name: "Send" })
   );
 
   expect(
     await screen.findByText(
-      "Please log in to use AI Event Assistant."
+      "Please log in to use the AI Booking Agent."
     )
   ).toBeInTheDocument();
+});
+
+it("navigates to checkout after reviewing proposal", async () => {
+  searchMock.mockResolvedValue({
+    message: "Two adjacent seats are available.",
+    toolsUsed: ["propose_booking"],
+    proposal,
+  });
+
+  draftMock.mockResolvedValue({
+    eventId: 4,
+    seats: [
+      { id: "A1", price: 65 },
+      { id: "A2", price: 65 },
+    ],
+  });
+
+  render(<AIEventAssistant />);
+
+  fireEvent.change(screen.getByRole("textbox"), {
+    target: { value: "Find two adjacent seats" },
+  });
+
+  fireEvent.click(
+    screen.getByRole("button", { name: "Send" })
+  );
+
+  const reviewButton = await screen.findByRole(
+    "button",
+    { name: "Review Booking" }
+  );
+
+  expect(navigateMock).not.toHaveBeenCalled();
+  expect(draftMock).not.toHaveBeenCalled();
+
+  fireEvent.click(reviewButton);
+
+  await waitFor(() => {
+    expect(navigateMock).toHaveBeenCalledWith(
+      "/checkout",
+      {
+        state: {
+          draft: {
+            eventId: 4,
+            seats: [
+              { id: "A1", price: 65 },
+              { id: "A2", price: 65 },
+            ],
+          },
+        },
+      }
+    );
+  });
+});
+
+it("does not navigate when recommended seats are unavailable", async () => {
+  searchMock.mockResolvedValue({
+    message: "Here is a booking proposal.",
+    toolsUsed: ["propose_booking"],
+    proposal,
+  });
+
+  draftMock.mockRejectedValue(
+    new Error("One or more recommended seats are no longer available.")
+  );
+
+  render(<AIEventAssistant />);
+
+  fireEvent.change(screen.getByRole("textbox"), {
+    target: { value: "Find two seats" },
+  });
+
+  fireEvent.click(
+    screen.getByRole("button", { name: "Send" })
+  );
+
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Review Booking",
+    })
+  );
+
+  expect(
+    await screen.findByRole("alert")
+  ).toHaveTextContent(/no longer available/i);
+
+  expect(navigateMock).not.toHaveBeenCalled();
 });
