@@ -1,110 +1,166 @@
 # EventHub
 
-**A full-stack event discovery and ticket booking application built with React, TypeScript, Node.js, Express, and SQLite.**
+### Full-Stack Event Discovery & Ticket Booking Platform with AI-Powered Search
 
-EventHub allows users to explore events, select available seats, make reservations, manage bookings, and update their account information through a responsive web interface.
+[Live Demo](https://eventhub-chi-ten.vercel.app) | [GitHub Repository](https://github.com/jiayu1123/eventhub)
 
-The project demonstrates end-to-end full-stack development, including frontend state management, RESTful API design, relational data modeling, session-based authentication, and server-side booking validation.
+EventHub is a full-stack web application for discovering events, exploring ticket availability, selecting seats, and managing reservations.
 
-## Tech Stack
+The platform integrates an AI-powered event assistant that translates natural-language requests into structured search criteria, allowing users to discover events by location, date, and price.
+
+Built with React, TypeScript, Java, Spring Boot, and PostgreSQL, EventHub demonstrates full-stack application development, RESTful API integration, relational database design, authentication, concurrency-aware seat reservations, and cloud deployment.
+
+> **Demo notice:** EventHub currently uses fictional demonstration events and venues. It does not sell tickets to real-world events.
+
+## Features
+
+### AI-Powered Event Discovery
+- Search for events using natural-language requests.
+- Extract search criteria through the OpenAI API.
+- Query PostgreSQL for matching events.
+- Display matching results in the web interface.
+- Keep OpenAI API credentials on the backend.
+
+**Example queries:**
+- Find events in Boston under $100.
+- Show me events in Seattle.
+- Find events in New York under $80.
+
+### Event Browsing and Filtering
+- Browse events across multiple cities.
+- Search by event name or location.
+- Filter events by category.
+- View event details, venue information, dates, and ticket prices.
+- Use a responsive interface across screen sizes.
+
+### Interactive Ticket Booking
+- View available seats for each event.
+- Select seats through an interactive interface.
+- Review ticket prices before confirming a booking.
+- Prevent conflicting active reservations using database constraints.
+- Preserve historical booking records when reservations are cancelled.
+
+### Authentication and Account Management
+- Register and sign in.
+- Authenticate using server-managed sessions.
+- Protect authenticated operations with session and CSRF controls.
+- View personal booking history.
+- Cancel reservations and release seats.
+- Manage account information.
+
+## Technology Stack
 
 | Layer | Technologies |
 |---|---|
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS |
-| Backend | Node.js, Express 5, TypeScript |
-| Database | SQLite |
-| Authentication | Session-based authentication, HttpOnly cookies, scrypt password hashing |
 | Routing | React Router |
-| State Management | React Hooks, Context API |
-| Development Tools | Git, GitHub, ESLint, npm |
-
-## Key Features
-
-### Event Discovery
-- Browse available events through a responsive event listing.
-- Search and filter events to find relevant experiences.
-- View event details, including venue information and ticket pricing.
-
-### Interactive Seat Selection
-- Select seats using an interactive seating layout.
-- View seat availability before proceeding to checkout.
-- Prevent duplicate reservations through server-side validation and database constraints.
-
-### Ticket Booking and Management
-- Complete a booking through a dedicated checkout flow.
-- View booking confirmation and reservation details.
-- Access personal booking history.
-- Cancel existing bookings and release reserved seats.
-
-### Authentication and Account Security
-- Register and log in using email and password.
-- Store passwords using salted scrypt hashes.
-- Authenticate users through server-managed sessions and HttpOnly cookies.
-- Restrict booking operations to authenticated users and enforce booking ownership.
-- Log out and manage personal account information.
-
-### User Profile
-- View account information and membership date.
-- Update the account display name.
-- Change passwords after verifying the current password.
+| Backend | Java 21, Spring Boot 4, REST APIs |
+| Database | PostgreSQL |
+| Database Migrations | Flyway |
+| Persistence | Spring Data JPA, Hibernate |
+| AI Integration | OpenAI Responses API |
+| Authentication | Session-based authentication, CSRF protection |
+| Frontend Testing | Vitest, React Testing Library |
+| Backend Testing | JUnit, Spring Boot Test |
+| Deployment | Vercel, Render, Docker |
+| Development Tools | Git, GitHub, Maven, npm |
 
 ## System Architecture
 
-EventHub uses a client-server architecture.
+```mermaid
+flowchart TD
+    U["User / Browser"]
+    F["React + TypeScript Frontend<br/>Vercel"]
+    B["Java Spring Boot REST API<br/>Render"]
+    D[("PostgreSQL Database")]
+    AI["OpenAI Responses API"]
 
-```text
-React + TypeScript Frontend
-          |
-          | HTTP / REST APIs
-          v
-Node.js + Express Backend
-          |
-          | SQL Queries
-          v
-      SQLite Database
+    U -->|"HTTPS"| F
+    F -->|"REST API / JSON<br/>Session Cookies + CSRF"| B
+    B -->|"JPA / SQL"| D
+    B -->|"Server-side AI Requests"| AI
+    AI -->|"Structured Search Criteria"| B
+    B -->|"Event Results"| F
 ```
 
-The frontend handles event browsing, navigation, form interactions, seat selection, and user-facing booking workflows.
+### Request Flow
 
-The backend handles authentication, session validation, booking authorization, seat availability, reservation creation, and database persistence.
+**Standard event search**
+1. The user searches or filters events in the React frontend.
+2. The frontend sends a request to the Spring Boot REST API.
+3. The backend queries PostgreSQL.
+4. Matching events are returned to the frontend.
 
-SQLite stores user accounts, sessions, booking records, and reserved seat information.
+**AI-assisted event search**
+1. The user submits a natural-language request.
+2. The frontend sends the request to the Spring Boot backend.
+3. The backend calls the OpenAI API to interpret the search criteria.
+4. The backend searches PostgreSQL using those criteria.
+5. Matching events are returned to the user.
+
+**Ticket reservation**
+1. The authenticated user selects an event and available seats.
+2. The backend validates the reservation request.
+3. Database constraints prevent conflicting active seat reservations.
+4. Booking records are persisted in PostgreSQL.
+5. The user can view or cancel the reservation.
+
+## Database Design
+
+EventHub uses PostgreSQL to store relational application data.
+
+Core tables include:
+
+| Table | Purpose |
+|---|---|
+| `users` | User accounts |
+| `events` | Event details and pricing |
+| `event_seats` | Seat inventory and seat-level pricing |
+| `bookings` | Reservation records and status |
+| `booking_seats` | Historical booked seats and price snapshots |
+| `active_seat_reservations` | Currently reserved seats |
+
+Flyway manages versioned schema migrations, including booking-history preservation and demo-data initialization.
 
 ## Project Structure
 
 ```text
 eventhub/
-├── public/
+├── backend/
+│   ├── src/
+│   │   ├── main/
+│   │   │   ├── java/com/eventhub/
+│   │   │   └── resources/
+│   │   │       └── db/migration/
+│   │   └── test/
+│   ├── Dockerfile
+│   ├── mvnw
+│   └── pom.xml
 ├── src/
-│   ├── api/                 # Frontend API clients
-│   ├── components/          # Reusable React components
-│   ├── context/             # Authentication context
-│   ├── data/                # Frontend event data
-│   ├── pages/               # Application pages
-│   ├── types/               # TypeScript definitions
+│   ├── api/
+│   ├── components/
+│   ├── context/
+│   ├── pages/
+│   ├── types/
 │   ├── App.tsx
 │   └── main.tsx
-├── server/
-│   ├── src/
-│   │   ├── api/             # Backend API helpers
-│   │   ├── data/            # Event data
-│   │   ├── db/              # SQLite operations
-│   │   ├── middleware/      # Authentication middleware
-│   │   ├── routes/          # Express routes
-│   │   ├── types/           # Backend TypeScript definitions
-│   │   └── index.ts
-│   ├── package.json
-│   └── tsconfig.json
+├── public/
+├── screenshots/
 ├── package.json
 ├── vite.config.ts
+├── vercel.json
 └── README.md
 ```
+
+The `backend/` directory contains the current Java backend used for deployment.
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js and npm
+- Java 21
+- PostgreSQL
 - Git
 
 ### 1. Clone the repository
@@ -114,38 +170,44 @@ git clone https://github.com/jiayu1123/eventhub.git
 cd eventhub
 ```
 
-### 2. Install frontend dependencies
+### 2. Configure PostgreSQL
+
+Create a PostgreSQL database named `eventhub`.
+
+Configure the following backend environment variables:
+
+| Variable | Description |
+|---|---|
+| `DB_URL` | PostgreSQL JDBC connection URL |
+| `DB_USERNAME` | PostgreSQL username |
+| `DB_PASSWORD` | PostgreSQL password |
+| `OPENAI_API_KEY` | OpenAI API key for AI-assisted search |
+| `PORT` | Optional backend HTTP port (default: 8080) |
+
+The backend configuration provides local development defaults for PostgreSQL.
+
+Flyway runs database migrations during application startup.
+
+### 3. Start the backend
+
+From the project root:
 
 ```bash
+cd backend
+./mvnw spring-boot:run
+```
+
+The backend runs at:
+
+`http://localhost:8080`
+
+### 4. Start the frontend
+
+Open another terminal:
+
+```bash
+cd eventhub
 npm install
-```
-
-### 3. Install backend dependencies
-
-```bash
-cd server
-npm install
-```
-
-### 4. Start the backend
-
-From the `server` directory:
-
-```bash
-npm run dev
-```
-
-The backend runs locally at:
-
-`http://localhost:3001`
-
-The SQLite database is stored locally and excluded from version control.
-
-### 5. Start the frontend
-
-Open another terminal and run from the project root:
-
-```bash
 npm run dev
 ```
 
@@ -153,91 +215,113 @@ Open:
 
 `http://localhost:5173`
 
-## Available Scripts
+The frontend development server must be configured to forward API requests to the local backend.
 
-### Frontend
-
-| Command | Description |
-|---|---|
-| `npm run dev` | Start the Vite development server |
-| `npm run build` | Type-check and build the frontend |
-| `npm run lint` | Run ESLint |
-| `npm run preview` | Preview the production frontend build |
+## Testing
 
 ### Backend
 
-Run these commands from `server/`.
+From the `backend/` directory:
 
-| Command | Description |
+```bash
+./mvnw test
+```
+
+The backend test suite includes coverage for AI search service behavior, API integration, and security.
+
+### Frontend
+
+From the project root:
+
+```bash
+npx vitest run
+npm run build
+npm run lint
+```
+
+The frontend includes automated tests for the AI event assistant.
+
+## Deployment
+
+EventHub is deployed using separate frontend and backend services.
+
+| Component | Platform |
 |---|---|
-| `npm run dev` | Start the backend with automatic reload |
-| `npm run build` | Compile the TypeScript backend |
-| `npm start` | Run the compiled backend |
+| React frontend | Vercel |
+| Spring Boot backend | Render |
+| Backend packaging | Docker |
+| Database | PostgreSQL |
+
+**Frontend:** https://eventhub-chi-ten.vercel.app
+
+**Backend API:** https://eventhub-backend-ftwg.onrender.com/api/events
+
+The frontend communicates with the backend through API routing. Sensitive credentials, including the OpenAI API key and database password, remain on the server.
+
+The backend uses Flyway migrations to initialize and update the database schema.
 
 ## Engineering Highlights
 
-**Type-safe full-stack development:** Uses TypeScript in both the React frontend and Express backend, with defined types for events, seats, and bookings.
+**Full-stack integration:** Connected a React and TypeScript frontend to a Java Spring Boot backend through REST APIs.
 
-**Database integrity:** Enforces unique seat reservations at the database level to prevent the same event seat from being booked twice.
+**AI-assisted search:** Integrated the OpenAI API to interpret natural-language requests and translate them into database-backed event searches.
 
-**Authentication and authorization:** Uses password hashing, server-managed sessions, HttpOnly cookies, and ownership checks to protect account and booking operations.
+**Reservation integrity:** Designed relational seat inventory and active-reservation constraints to prevent conflicting bookings while preserving cancellation history.
 
-**Separation of concerns:** Organizes the application into frontend components, API clients, backend routes, middleware, and database modules.
+**Authentication and security:** Implemented session-based authentication and CSRF protection for authenticated API operations.
 
-**Responsive user experience:** Builds reusable React components and mobile-friendly interfaces for browsing, booking, and managing events.
+**Database migrations:** Used Flyway to manage schema evolution and maintain consistent database structures across environments.
 
-## Screenshots
+**Cloud deployment:** Deployed the frontend on Vercel and a Dockerized Spring Boot backend on Render.
 
-Screenshots of the event listing, event details, seat selection, booking confirmation, booking history, and user profile will be added here.
-
-## Future Improvements
-
-- Add automated unit and integration tests for authentication and booking workflows.
-- Introduce session management and the ability to revoke sessions on other devices.
-- Deploy the frontend and backend for an accessible live demo.
-- Expand event management capabilities.
-
-## Author
-
-Developed by [Jiayu Zou](https://github.com/jiayu1123).
-
-GitHub: https://github.com/jiayu1123/eventhub
-
+**Automated testing:** Added frontend component tests and backend service, integration, and security tests.
 
 ## Screenshots
 
 ### Homepage
-Browse and search for available events.
+
+Browse events and search by city, category, or keyword.
 
 ![EventHub Homepage](screenshots/homepage.png)
 
 ### Event Details
-Explore event information and booking options.
+
+View event information, ticket pricing, and booking options.
 
 ![Event Details](screenshots/event-details.png)
 
 ### Interactive Seat Selection
-Select available seats using the interactive seating interface.
+
+Select seats from the available inventory.
 
 ![Seat Selection](screenshots/seat-selection.png)
 
-### Check Up
-Check up the tickets.
+### Ticket Checkout
 
-![Seat Selection](screenshots/check-up.png)
+Review selected tickets before booking.
+
+![Ticket Checkout](screenshots/check-up.png)
 
 ### Booking Confirmation
+
 Review reservation details after completing a booking.
 
 ![Booking Confirmation](screenshots/booking-confirmation.png)
 
 ### My Bookings
+
 View booking history and manage reservations.
 
 ![My Bookings](screenshots/my-bookings.png)
 
 ### User Profile
-Manage account information and security settings.
+
+Manage account information.
 
 ![User Profile](screenshots/profile.png)
 
+## Author
+
+Developed by **Jiayu Zou**
+
+GitHub: https://github.com/jiayu1123
